@@ -6,6 +6,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
+import java.util.prefs.Preferences;
 
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
@@ -28,6 +29,7 @@ public class MainFrame extends JFrame
 	private JFileChooser fileChooser;
 	private TablePanel tablePanel;
 	private PrefsDialog prefsDialog;
+  private Preferences prefs;
 
 	private Controller controller;
 
@@ -43,6 +45,8 @@ public class MainFrame extends JFrame
 		tablePanel = new TablePanel();
 		prefsDialog = new PrefsDialog( this );
 
+    prefs = Preferences.userRoot().node("db");
+
 		controller = new Controller();
 		tablePanel.setData( controller.getPeople() );
 		tablePanel.setPersonTableListener(new IPersonTableListener() {
@@ -52,6 +56,22 @@ public class MainFrame extends JFrame
 			}
 
 		} );
+
+    prefsDialog.setPrefsListener(new IPrefsListener() {
+
+      @Override
+      public void preferencesSet(String user, String password, int port) {
+        prefs.put("user", user);
+        prefs.put("password", password);
+        prefs.putInt("port", port);
+      }
+
+    });
+
+    String user = prefs.get("user", "");
+    String password = prefs.get("password", "");
+    Integer port = prefs.getInt("port", 3306);
+    prefsDialog.setDefaults(user, password, port);
 
 		fileChooser = new JFileChooser( "C:\\Temp\\test.per" );
 		fileChooser.setAcceptAllFileFilterUsed( false );
@@ -145,6 +165,7 @@ public class MainFrame extends JFrame
 
 		exitItem.setAccelerator( KeyStroke.getKeyStroke( KeyEvent.VK_X, ActionEvent.CTRL_MASK ) );
 		importDataItem.setAccelerator( KeyStroke.getKeyStroke( KeyEvent.VK_I, ActionEvent.CTRL_MASK ) );
+		prefsItem.setAccelerator( KeyStroke.getKeyStroke( KeyEvent.VK_P, ActionEvent.CTRL_MASK ) );
 
 		importDataItem.addActionListener( new ActionListener() {
 
