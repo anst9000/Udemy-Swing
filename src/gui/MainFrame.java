@@ -1,4 +1,5 @@
 package gui;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.event.ActionEvent;
@@ -22,6 +23,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.KeyStroke;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import javax.swing.filechooser.FileFilter;
 
 import controller.Controller;
@@ -29,7 +32,6 @@ import controller.Controller;
 public class MainFrame extends JFrame
 {
 	private static final long serialVersionUID = 1L;
-	private TextPanel textPanel;
 	private Toolbar toolbar;
 	private FormPanel formPanel;
 	private JFileChooser fileChooser;
@@ -48,7 +50,6 @@ public class MainFrame extends JFrame
 
 		setLayout( new BorderLayout() );
 
-		textPanel = new TextPanel();
 		toolbar = new Toolbar();
 		formPanel = new FormPanel();
 		tablePanel = new TablePanel();
@@ -66,21 +67,37 @@ public class MainFrame extends JFrame
 
 		controller = new Controller();
 		tablePanel.setData( controller.getPeople() );
+
 		tablePanel.setPersonTableListener(new IPersonTableListener() {
 			@Override
 			public void rowDeleted(int row) {
 				controller.removePerson( row );
 			}
-
 		} );
 
-    prefsDialog.setPrefsListener(new IPrefsListener() {
+    tabbedPane.addChangeListener(new ChangeListener() {
+      @Override
+      public void stateChanged(ChangeEvent e) {
+        int tabIndex = tabbedPane.getSelectedIndex();
 
+        if (tabIndex == 1) {
+          messagePanel.refresh();
+        }
+      }
+    });
+
+    prefsDialog.setPrefsListener(new IPrefsListener() {
       @Override
       public void preferencesSet(String user, String password, int port) {
         prefs.put("user", user);
         prefs.put("password", password);
         prefs.putInt("port", port);
+
+        try {
+          controller.configure(port, user, password);
+        } catch (Exception e) {
+          JOptionPane.showMessageDialog(MainFrame.this, "Unable to re-connect to DB.");
+        }
       }
 
     });
@@ -88,7 +105,14 @@ public class MainFrame extends JFrame
     String user = prefs.get("user", "");
     String password = prefs.get("password", "");
     Integer port = prefs.getInt("port", 3306);
+
     prefsDialog.setDefaults(user, password, port);
+
+    try {
+      controller.configure(port, user, password);
+    } catch (Exception e) {
+      System.err.println("Cannot connect DB.");
+    }
 
 		fileChooser = new JFileChooser( "C:\\Temp\\test.per" );
 		fileChooser.setAcceptAllFileFilterUsed( false );
@@ -114,17 +138,8 @@ public class MainFrame extends JFrame
 
       @Override
       public void refreshEventOccured() {
-        connect();
-
-        try {
-          controller.load();
-        } catch (SQLException e) {
-          JOptionPane.showMessageDialog(MainFrame.this, "Unable to load from DB.", "Database Connection Problem", JOptionPane.ERROR_MESSAGE);
-        }
-
-        tablePanel.refresh();
+        refresh();
       }
-
     } );
 
 		formPanel.setFormListener( new IFormListener() {
@@ -150,12 +165,27 @@ public class MainFrame extends JFrame
     });
 
 		setDefaultCloseOperation( JFrame.DO_NOTHING_ON_CLOSE );
+
+    refresh();
+
 		setMinimumSize( new Dimension( 600, 500 ) );
 		setSize( 600, 500 );
 		pack();
 		setLocationRelativeTo( null );
 		setVisible( true );
 	}
+
+  private void refresh() {
+    connect();
+
+    try {
+      controller.load();
+    } catch (SQLException e) {
+      JOptionPane.showMessageDialog(MainFrame.this, "Unable to load from DB.", "Database Connection Problem", JOptionPane.ERROR_MESSAGE);
+    }
+
+    tablePanel.refresh();
+  }
 
   private void connect() {
     try {

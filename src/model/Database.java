@@ -20,12 +20,26 @@ import java.util.List;
 public class Database {
 
 	private List<Person> people;
-
   private Connection conn;
+
+  private int port;
+  private String user;
+  private String password;
 
 	public Database() {
 		people = new LinkedList<>();
 	}
+
+  public void configure(int port, String user, String password) throws Exception {
+    this.port = port;
+    this.user = user;
+    this.password = password;
+
+    if (conn != null) {
+      disconnect();
+      connect();
+    }
+  }
 
   public void connect() throws Exception {
     if (conn != null) {

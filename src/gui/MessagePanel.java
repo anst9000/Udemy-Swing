@@ -1,39 +1,55 @@
 package gui;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 
+import javax.swing.DefaultListModel;
 import javax.swing.JFrame;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTree;
-import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeSelectionModel;
 
 import model.Message;
 import controller.MessageServer;
 
-public class MessagePanel extends JPanel {
+public class MessagePanel extends JPanel implements IProgressDialogListener {
 
 	private JTree serverTree;
 	private ServerTreeCellRenderer treeCellRenderer;
 	private ServerTreeCellEditor treeCellEditor;
-  private ProgressDialog progressDialog;
+	private ProgressDialog progressDialog;
 
 	private Set<Integer> selectedServers;
 	private MessageServer messageServer;
+	private SwingWorker<List<Message>, Integer> worker;
+
+	private TextPanel textPanel;
+	private JList<Message> messageList;
+	private JSplitPane upperPane;
+	private JSplitPane lowerPane;
+	private DefaultListModel<Message> messageListModel;
 
 	public MessagePanel(JFrame parent) {
-    progressDialog = new ProgressDialog(parent);
+		messageListModel = new DefaultListModel<>();
+
+		progressDialog = new ProgressDialog(parent, "Messages Downloading...");
 		messageServer = new MessageServer();
+
+		progressDialog.setListener(this);
 
 		selectedServers = new TreeSet<Integer>();
 		selectedServers.add(0);
@@ -51,13 +67,13 @@ public class MessagePanel extends JPanel {
 		serverTree.getSelectionModel().setSelectionMode(
 				TreeSelectionModel.SINGLE_TREE_SELECTION);
 
+		messageServer.setSelectedServers(selectedServers);
+
 		treeCellEditor.addCellEditorListener(new CellEditorListener() {
 			public void editingCanceled(ChangeEvent e) {
 			}
 			public void editingStopped(ChangeEvent e) {
 				ServerInfo info = (ServerInfo)treeCellEditor.getCellEditorValue();
-
-				System.out.println(info + ": " + info.getId() + "; " + info.isChecked());
 
 				int serverId = info.getId();
 
@@ -70,60 +86,108 @@ public class MessagePanel extends JPanel {
 
 				messageServer.setSelectedServers(selectedServers);
 
-        retrieveMessages();
+				retrieveMessages();
 			}
 		});
 
 		setLayout(new BorderLayout());
 
-		add(new JScrollPane(serverTree), BorderLayout.CENTER);
+		textPanel = new TextPanel();
+		messageList = new JList<>(messageListModel);
+    messageList.setCellRenderer(new MessageListRenderer());
+
+    messageList.addListSelectionListener(new ListSelectionListener() {
+      @Override
+      public void valueChanged(ListSelectionEvent e) {
+        Message message = (Message) messageList.getSelectedValue();
+
+        textPanel.setText(message.getContent());
+      }
+    });
+
+		lowerPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(messageList), textPanel);
+		upperPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(serverTree), lowerPane);
+
+    upperPane.setResizeWeight(0.3);
+		lowerPane.setResizeWeight(0.7);
+
+		textPanel.setMinimumSize(new Dimension(10, 125));
+		messageList.setMinimumSize(new Dimension(10, 100));
+		lowerPane.setMinimumSize(new Dimension(10, 300));
+
+		add(upperPane, BorderLayout.CENTER);
 	}
 
-  private void retrieveMessages() {
-    progressDialog.setMaximum(messageServer.getMessageCount());
-    progressDialog.setVisible(true);
+	public void refresh() {
+		retrieveMessages();
+	}
 
-    SwingWorker<List<Message>, Integer> worker = new SwingWorker<List<Message>, Integer>() {
+	private void retrieveMessages() {
 
-      @Override
-      protected List<Message> doInBackground() throws Exception {
-        List<Message>retrievedMessages = new ArrayList<>();
+		progressDialog.setMaximum(messageServer.getMessageCount());
+		progressDialog.setVisible(true);
 
-        int count = 0;
-        for (Message message : messageServer) {
-          System.out.println(message.getTitle());
+		worker = new SwingWorker<List<Message>, Integer>() {
 
-          retrievedMessages.add(message);
+			@Override
+			protected void done() {
 
-          count++;
-          publish(count);
-        }
+				progressDialog.setVisible(false);
 
-        return retrievedMessages;
-      }
+				if(isCancelled()) return;
 
-      @Override
-      protected void done() {
-        try {
-          List<Message> retrievedMessages = get();
-        } catch (InterruptedException | ExecutionException e) {
-          e.printStackTrace();
-        }
+				try {
+					List<Message> retrievedMessages = get();
+					messageListModel.removeAllElements();
 
-        progressDialog.setVisible(false);
-      }
+					for(Message message: retrievedMessages) {
+						messageListModel.addElement(message);
+					}
 
-      @Override
-      protected void process(List<Integer> counts) {
-        int retrieved = counts.get(counts.size() - 1);
+          messageList.setSelectedIndex(0);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				} catch (ExecutionException e) {
+					e.printStackTrace();
+				}
+			}
 
-        progressDialog.setValue(retrieved);
-      }
+			@Override
+			protected void process(List<Integer> counts) {
 
-    };
+				int retrieved = counts.get(counts.size() - 1);
 
-    worker.execute();
-  }
+				progressDialog.setValue(retrieved);
+			}
+
+			@Override
+			protected List<Message> doInBackground() throws Exception {
+
+				List<Message> retrievedMessages = new ArrayList<Message>();
+
+				int count = 0;
+
+				for(Message message: messageServer) {
+
+					if(isCancelled()) break;
+
+					System.out.println(message.getTitle());
+
+					retrievedMessages.add(message);
+
+					count++;
+
+					publish(count);
+				}
+
+				return retrievedMessages;
+			}
+		};
+
+		worker.execute();
+
+
+	}
 
 	private DefaultMutableTreeNode createTree() {
 		DefaultMutableTreeNode top = new DefaultMutableTreeNode("Servers");
@@ -154,6 +218,13 @@ public class MessagePanel extends JPanel {
 		top.add(branch2);
 
 		return top;
+	}
+
+	@Override
+	public void progressDialogCancelled() {
+		if(worker != null) {
+			worker.cancel(true);
+		}
 	}
 
 }
